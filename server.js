@@ -17,6 +17,12 @@ app.post("/twilio/voice-otp", (req, res) => {
 `.trim());
 });
 
+app.post("/twilio/inbound", (req, res) => {
+  const { From, To, Body, ProfileName } = req.body;
+  console.log("💬 INBOUND", { From, To, Body, ProfileName });
+  res.type("text/xml").send("<Response></Response>");
+});
+
 app.get("/", (_req, res) => res.send("ok"));
 
 app.listen(process.env.PORT || 3000, () => console.log("listening"));
