@@ -8,6 +8,15 @@ app.post("/twilio/sms-inbound", (req, res) => {
   res.type("text/xml").send("<Response></Response>");
 });
 
+app.post("/twilio/voice-otp", (req, res) => {
+  res.type("text/xml").send(`
+<Response>
+  <Record maxLength="90" playBeep="false" />
+  <Hangup/>
+</Response>
+`.trim());
+});
+
 app.get("/", (_req, res) => res.send("ok"));
 
 app.listen(process.env.PORT || 3000, () => console.log("listening"));
