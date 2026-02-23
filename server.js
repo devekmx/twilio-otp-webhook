@@ -3,9 +3,42 @@ import twilio from "twilio";
 import pg from "pg";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
-import { authenticator } from "otplib";
+import { createHmac } from "crypto";
 import jwt from "jsonwebtoken";
 import QRCode from "qrcode";
+
+// ─── TOTP (RFC 6238) sin deps externas ───────────────────────────────────────
+function base32decode(s) {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  let bits = 0, val = 0;
+  const out = [];
+  for (const c of s.toUpperCase().replace(/=+$/, "")) {
+    const i = chars.indexOf(c);
+    if (i < 0) continue;
+    val = (val << 5) | i; bits += 5;
+    if (bits >= 8) { out.push((val >>> (bits - 8)) & 0xff); bits -= 8; }
+  }
+  return Buffer.from(out);
+}
+
+function totpCode(secret, offset = 0) {
+  const step = Math.floor(Date.now() / 1000 / 30) + offset;
+  const buf = Buffer.alloc(8);
+  buf.writeUInt32BE(0, 0); buf.writeUInt32BE(step, 4);
+  const hmac = createHmac("sha1", base32decode(secret)).update(buf).digest();
+  const pos  = hmac[hmac.length - 1] & 0xf;
+  const code = (hmac.readUInt32BE(pos) & 0x7fffffff) % 1_000_000;
+  return code.toString().padStart(6, "0");
+}
+
+function verifyTOTP(token, secret) {
+  // Ventana ±1 (30s antes y después para compensar desfase de reloj)
+  return [-1, 0, 1].some(w => totpCode(secret, w) === token);
+}
+
+function totpKeyUri(account, issuer, secret) {
+  return `otpauth://totp/${encodeURIComponent(issuer)}:${encodeURIComponent(account)}?secret=${secret}&issuer=${encodeURIComponent(issuer)}&algorithm=SHA1&digits=6&period=30`;
+}
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -90,8 +123,7 @@ app.post("/ui/auth", async (req, res) => {
   }
 
   // Verificar código TOTP (ventana ±1 para compensar desfase de reloj)
-  authenticator.options = { window: 1 };
-  const valid = authenticator.verify({ token: code, secret: process.env.TOTP_SECRET });
+  const valid = verifyTOTP(code, process.env.TOTP_SECRET);
   if (!valid) {
     return res.status(401).json({ ok: false, step: "totp", error: "Código incorrecto" });
   }
@@ -106,7 +138,7 @@ app.get("/ui/setup", async (req, res) => {
   if (!key || key !== process.env.OPENCLAW_SHARED_SECRET) {
     return res.status(401).send("Envía x-openclaw-key en el header");
   }
-  const otpauth = authenticator.keyuri("Warren", "Devek Sourcing", process.env.TOTP_SECRET);
+  const otpauth = totpKeyUri("Warren", "Devek Sourcing", process.env.TOTP_SECRET);
   const qr = await QRCode.toDataURL(otpauth);
   res.send(`<!DOCTYPE html><html><head><meta charset="utf-8">
     <title>Setup 2FA</title>
