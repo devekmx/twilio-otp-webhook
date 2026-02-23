@@ -2,173 +2,170 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Devek Sourcing — Conversaciones</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <title>Devek Sourcing</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
-    .bubble-in  { background: #f0f0f0; border-radius: 0 12px 12px 12px; }
-    .bubble-out { background: #dcf8c6; border-radius: 12px 0 12px 12px; }
-    #messages   { scroll-behavior: smooth; }
+    * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; overscroll-behavior: none; }
+    .bubble-in  { background: #f0f0f0; border-radius: 0 14px 14px 14px; }
+    .bubble-out { background: #dcf8c6; border-radius: 14px 0 14px 14px; }
+    #messages   { scroll-behavior: smooth; -webkit-overflow-scrolling: touch; }
+    #thread-list { -webkit-overflow-scrolling: touch; }
+    /* Mobile: ocultar panel inactivo */
+    @media (max-width: 767px) {
+      #panel-threads { display: flex; flex-direction: column; }
+      #panel-chat    { display: none; flex-direction: column; }
+      body.chat-open #panel-threads { display: none; }
+      body.chat-open #panel-chat    { display: flex; }
+    }
+    /* Desktop: ambos visibles */
+    @media (min-width: 768px) {
+      #panel-threads { display: flex !important; flex-direction: column; width: 320px; flex-shrink: 0; }
+      #panel-chat    { display: flex !important; flex-direction: column; flex: 1; }
+    }
   </style>
 </head>
-<body class="bg-gray-100 h-screen flex flex-col">
+<body class="bg-gray-100 h-screen flex flex-col overflow-hidden">
 
-<!-- ── AUTH SCREEN ─────────────────────────────────────────────────────── -->
-<div id="auth-screen" class="hidden fixed inset-0 bg-gray-900 bg-opacity-80 flex items-center justify-center z-50">
-  <div class="bg-white rounded-2xl shadow-xl p-8 w-80 flex flex-col gap-4">
+<!-- ── AUTH ──────────────────────────────────────────────────────────────── -->
+<div id="auth-screen" class="hidden fixed inset-0 bg-gray-900/80 flex items-center justify-center z-50 p-4">
+  <div class="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm flex flex-col gap-4">
 
-    <!-- Paso 1: Clave -->
     <div id="step-key">
-      <h2 class="text-xl font-bold text-gray-800 mb-1">🔑 Acceso</h2>
-      <p class="text-sm text-gray-500 mb-3">Ingresa tu clave de acceso</p>
+      <div class="text-3xl mb-2">🔑</div>
+      <h2 class="text-xl font-bold text-gray-800 mb-1">Acceso</h2>
+      <p class="text-sm text-gray-500 mb-4">Ingresa tu clave de acceso</p>
       <input id="key-input" type="password" placeholder="oc_..."
-        class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400 mb-3" />
+        class="w-full border border-gray-300 rounded-xl px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-green-400 mb-3" />
       <button onclick="doStep1()"
-        class="w-full bg-green-500 hover:bg-green-600 text-white rounded-lg px-4 py-2 text-sm font-medium">
+        class="w-full bg-green-500 active:bg-green-700 text-white rounded-xl px-4 py-3 text-base font-semibold">
         Continuar →
       </button>
     </div>
 
-    <!-- Paso 2: TOTP -->
     <div id="step-totp" class="hidden">
-      <h2 class="text-xl font-bold text-gray-800 mb-1">📱 Verificación 2FA</h2>
-      <p class="text-sm text-gray-500 mb-3">Ingresa el código de Google Authenticator</p>
-      <input id="totp-input" type="text" inputmode="numeric" pattern="[0-9]*"
-        placeholder="000000" maxlength="6"
-        class="w-full border rounded-lg px-3 py-2 text-sm text-center tracking-widest text-lg focus:outline-none focus:ring-2 focus:ring-green-400 mb-3" />
+      <div class="text-3xl mb-2">📱</div>
+      <h2 class="text-xl font-bold text-gray-800 mb-1">Verificación 2FA</h2>
+      <p class="text-sm text-gray-500 mb-4">Código de Google Authenticator</p>
+      <input id="totp-input" type="tel" inputmode="numeric" pattern="[0-9]*"
+        placeholder="000 000" maxlength="6"
+        class="w-full border border-gray-300 rounded-xl px-4 py-3 text-2xl text-center tracking-widest font-mono focus:outline-none focus:ring-2 focus:ring-green-400 mb-3" />
       <button onclick="doStep2()"
-        class="w-full bg-green-500 hover:bg-green-600 text-white rounded-lg px-4 py-2 text-sm font-medium">
+        class="w-full bg-green-500 active:bg-green-700 text-white rounded-xl px-4 py-3 text-base font-semibold">
         Verificar ✓
       </button>
-      <button onclick="backToStep1()" class="w-full text-xs text-gray-400 mt-2 hover:text-gray-600">
+      <button onclick="backToStep1()" class="w-full text-sm text-gray-400 mt-2 py-2">
         ← Cambiar clave
       </button>
     </div>
 
-    <p id="auth-error" class="text-red-500 text-xs hidden text-center"></p>
+    <p id="auth-error" class="text-red-500 text-sm hidden text-center font-medium"></p>
   </div>
 </div>
 
-<!-- ── MAIN APP ────────────────────────────────────────────────────────── -->
-<div id="app" class="hidden h-screen flex flex-col">
+<!-- ── APP ───────────────────────────────────────────────────────────────── -->
+<div id="app" class="hidden flex-col h-screen overflow-hidden" style="display:none">
 
   <!-- Header -->
-  <div class="bg-green-600 text-white px-4 py-3 flex items-center justify-between shadow">
-    <div class="flex items-center gap-3">
-      <span class="text-2xl">💬</span>
-      <div>
-        <div class="font-bold text-sm">Devek Sourcing</div>
-        <div id="status-bar" class="text-xs opacity-75">Cargando...</div>
+  <div class="bg-green-600 text-white px-4 py-3 flex items-center justify-between shadow-md flex-shrink-0">
+    <!-- Back button (mobile only) -->
+    <button id="btn-back" onclick="goBack()"
+      class="md:hidden mr-2 text-white text-xl px-1 hidden">‹</button>
+    <div class="flex items-center gap-3 flex-1 min-w-0">
+      <span class="text-2xl flex-shrink-0">💬</span>
+      <div class="min-w-0">
+        <div id="header-title" class="font-bold text-sm truncate">Devek Sourcing</div>
+        <div id="status-bar" class="text-xs opacity-75 truncate">Cargando...</div>
       </div>
     </div>
-    <button onclick="logout()" class="text-xs opacity-70 hover:opacity-100">Salir</button>
+    <div class="flex items-center gap-3 flex-shrink-0">
+      <a id="header-alibaba" href="#" target="_blank"
+        class="hidden text-xs bg-white/20 rounded-lg px-2 py-1 hover:bg-white/30">Alibaba ↗</a>
+      <button onclick="logout()" class="text-xs opacity-70 hover:opacity-100 px-1">Salir</button>
+    </div>
   </div>
 
   <!-- Body -->
   <div class="flex flex-1 overflow-hidden">
 
-    <!-- ── Thread list ── -->
-    <div class="w-80 bg-white border-r border-gray-200 flex flex-col flex-shrink-0">
-      <div class="px-3 py-2 border-b border-gray-100">
-        <input id="search" type="text" placeholder="🔍 Buscar proveedor..."
+    <!-- ── Panel izquierdo: threads ── -->
+    <div id="panel-threads" class="bg-white border-r border-gray-200 overflow-hidden">
+      <div class="px-3 py-2 border-b border-gray-100 flex-shrink-0">
+        <input id="search" type="search" placeholder="🔍 Buscar..."
           oninput="filterThreads()"
-          class="w-full text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-green-400" />
+          class="w-full text-sm border border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-1 focus:ring-green-400" />
       </div>
       <div id="thread-list" class="overflow-y-auto flex-1">
-        <div class="text-center text-gray-400 text-sm py-8">Cargando conversaciones...</div>
+        <div class="text-center text-gray-400 text-sm py-10">Cargando...</div>
       </div>
     </div>
 
-    <!-- ── Chat area ── -->
-    <div class="flex-1 flex flex-col bg-gray-50">
+    <!-- ── Panel derecho: chat ── -->
+    <div id="panel-chat" class="bg-gray-50 overflow-hidden">
 
-      <!-- Empty state -->
-      <div id="empty-state" class="flex-1 flex items-center justify-center text-gray-400">
+      <!-- Empty state (solo desktop) -->
+      <div id="empty-state" class="hidden md:flex flex-1 items-center justify-center text-gray-400">
         <div class="text-center">
           <div class="text-5xl mb-3">💬</div>
           <div class="text-sm">Selecciona una conversación</div>
         </div>
       </div>
 
-      <!-- Active chat -->
-      <div id="chat-area" class="hidden flex-1 flex flex-col overflow-hidden">
-
-        <!-- Chat header -->
-        <div class="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
-          <div>
-            <div id="chat-name" class="font-semibold text-gray-800 text-sm"></div>
-            <div id="chat-phone" class="text-xs text-gray-400"></div>
-          </div>
-          <a id="chat-alibaba" href="#" target="_blank"
-            class="hidden text-xs text-blue-500 hover:underline">Ver en Alibaba →</a>
-        </div>
-
-        <!-- Messages -->
-        <div id="messages" class="flex-1 overflow-y-auto px-4 py-3 flex flex-col gap-2">
-        </div>
+      <!-- Chat activo -->
+      <div id="chat-area" class="hidden flex-col h-full overflow-hidden">
+        <!-- Mensajes -->
+        <div id="messages" class="flex-1 overflow-y-auto px-3 py-3 flex flex-col gap-2"></div>
 
         <!-- Input -->
-        <div class="bg-white border-t border-gray-200 px-3 py-3 flex gap-2 items-end">
+        <div class="bg-white border-t border-gray-200 px-3 py-2 flex gap-2 items-end flex-shrink-0">
           <textarea id="msg-input" rows="1"
-            placeholder="Escribe un mensaje... (Enter para enviar)"
+            placeholder="Mensaje... (Enter = enviar)"
             onkeydown="handleKey(event)"
             oninput="autoResize(this)"
-            class="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-green-400 max-h-32"></textarea>
+            class="flex-1 border border-gray-200 rounded-2xl px-4 py-2 text-base resize-none focus:outline-none focus:ring-2 focus:ring-green-400 max-h-28 leading-normal"></textarea>
           <button onclick="sendMessage()"
-            class="bg-green-500 hover:bg-green-600 text-white rounded-xl px-4 py-2 text-sm font-medium flex-shrink-0">
+            class="bg-green-500 active:bg-green-700 text-white rounded-2xl w-11 h-11 flex items-center justify-center flex-shrink-0 text-xl shadow">
             ➤
           </button>
         </div>
 
-        <!-- 24h warning -->
-        <div id="window-warning" class="hidden bg-amber-50 border-t border-amber-200 px-4 py-2 text-xs text-amber-700">
-          ⚠️ Última respuesta hace más de 24h — solo puedes usar templates. El mensaje libre puede fallar.
+        <!-- Aviso 24h -->
+        <div id="window-warning" class="hidden bg-amber-50 border-t border-amber-200 px-4 py-2 text-xs text-amber-700 flex-shrink-0">
+          ⚠️ Más de 24h sin respuesta — solo templates disponibles. El mensaje libre puede fallar.
         </div>
-
       </div>
-    </div>
 
+    </div>
   </div>
 </div>
 
 <script>
 // ── State ──────────────────────────────────────────────────────────────────
-let SESSION = '';       // JWT token (no la clave raw)
-let tempKey  = '';      // clave raw temporal durante login (solo en memoria)
-let threads = [];
-let activePhone = null;
-let pollInterval = null;
+let SESSION = '', tempKey = '', threads = [], activePhone = null, pollInterval = null;
 
-// ── Auth ───────────────────────────────────────────────────────────────────
-function authHeader() {
-  return { 'x-session-token': SESSION };
-}
+function authHeader() { return { 'x-session-token': SESSION }; }
 
+// ── Init ───────────────────────────────────────────────────────────────────
 function init() {
   SESSION = localStorage.getItem('oc_session') || '';
-  if (SESSION) {
-    showApp();
-  } else {
-    document.getElementById('auth-screen').classList.remove('hidden');
-  }
+  if (SESSION) showApp();
+  else document.getElementById('auth-screen').classList.remove('hidden');
 }
 
+// ── Auth ───────────────────────────────────────────────────────────────────
 function showError(msg) {
   const el = document.getElementById('auth-error');
-  el.textContent = msg;
-  el.classList.remove('hidden');
+  el.textContent = msg; el.classList.remove('hidden');
 }
 
-// Paso 1 — verificar clave
 async function doStep1() {
   const key = document.getElementById('key-input').value.trim();
   if (!key) return;
   document.getElementById('auth-error').classList.add('hidden');
   try {
     const r = await fetch('/ui/auth', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ key })
     });
     const d = await r.json();
@@ -176,28 +173,23 @@ async function doStep1() {
       tempKey = key;
       document.getElementById('step-key').classList.add('hidden');
       document.getElementById('step-totp').classList.remove('hidden');
-      document.getElementById('totp-input').focus();
-    } else {
-      showError(d.error || 'Error');
-    }
+      setTimeout(() => document.getElementById('totp-input').focus(), 100);
+    } else showError(d.error || 'Error');
   } catch { showError('Error de red'); }
 }
 
-// Paso 2 — verificar TOTP
 async function doStep2() {
-  const code = document.getElementById('totp-input').value.trim();
-  if (!code) return;
+  const code = document.getElementById('totp-input').value.replace(/\D/g,'').trim();
+  if (code.length !== 6) return;
   document.getElementById('auth-error').classList.add('hidden');
   try {
     const r = await fetch('/ui/auth', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ key: tempKey, code })
     });
     const d = await r.json();
     if (d.ok && d.token) {
-      SESSION = d.token;
-      tempKey = '';
+      SESSION = d.token; tempKey = '';
       localStorage.setItem('oc_session', SESSION);
       document.getElementById('auth-screen').classList.add('hidden');
       showApp();
@@ -217,130 +209,121 @@ function backToStep1() {
   document.getElementById('auth-error').classList.add('hidden');
 }
 
-function logout() {
-  localStorage.removeItem('oc_session');
-  location.reload();
-}
+function logout() { localStorage.removeItem('oc_session'); location.reload(); }
 
 function showApp() {
-  document.getElementById('app').classList.remove('hidden');
+  const app = document.getElementById('app');
+  app.style.display = '';
+  app.classList.remove('hidden');
+  app.classList.add('flex');
   loadThreads();
   pollInterval = setInterval(loadThreads, 6000);
+}
+
+// ── Mobile nav ─────────────────────────────────────────────────────────────
+function goBack() {
+  document.body.classList.remove('chat-open');
+  document.getElementById('btn-back').classList.add('hidden');
+  document.getElementById('header-title').textContent = 'Devek Sourcing';
+  document.getElementById('header-alibaba').classList.add('hidden');
+  activePhone = null;
 }
 
 // ── Threads ────────────────────────────────────────────────────────────────
 async function loadThreads() {
   try {
     const r = await fetch('/dashboard/threads', { headers: authHeader() });
-    if (!r.ok) { if (r.status === 401) { logout(); return; } }
+    if (r.status === 401) { logout(); return; }
     threads = await r.json();
     renderThreads();
     document.getElementById('status-bar').textContent =
-      `${threads.length} conversación${threads.length !== 1 ? 'es' : ''} · actualizado ${new Date().toLocaleTimeString()}`;
+      `${threads.length} conversación${threads.length !== 1 ? 'es' : ''} · ${new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}`;
     if (activePhone) loadChat(activePhone);
-  } catch(e) {
-    document.getElementById('status-bar').textContent = 'Error de conexión';
-  }
+  } catch { document.getElementById('status-bar').textContent = 'Sin conexión'; }
 }
 
-function filterThreads() {
-  renderThreads();
-}
+function filterThreads() { renderThreads(); }
 
 function renderThreads() {
   const q = (document.getElementById('search').value || '').toLowerCase();
-  const filtered = threads.filter(t =>
-    !q ||
-    (t.supplier_name || '').toLowerCase().includes(q) ||
-    (t.supplier_phone || '').includes(q)
+  const list = threads.filter(t =>
+    !q || (t.supplier_name||'').toLowerCase().includes(q) || (t.supplier_phone||'').includes(q)
   );
-
   const el = document.getElementById('thread-list');
-  if (!filtered.length) {
-    el.innerHTML = '<div class="text-center text-gray-400 text-sm py-8">Sin resultados</div>';
-    return;
+  if (!list.length) {
+    el.innerHTML = '<div class="text-center text-gray-400 text-sm py-10">Sin resultados</div>'; return;
   }
-
-  el.innerHTML = filtered.map(t => {
-    const isActive = t.supplier_phone === activePhone;
+  el.innerHTML = list.map(t => {
+    const active = t.supplier_phone === activePhone;
     const name = t.supplier_name || t.supplier_phone;
-    const last = (t.last_body || '').substring(0, 60);
-    const ts = t.last_ts ? relativeTime(new Date(t.last_ts)) : '';
-    return `
-      <div onclick="selectThread('${t.supplier_phone}')"
-        class="px-3 py-3 border-b border-gray-100 cursor-pointer hover:bg-gray-50 transition-colors
-               ${isActive ? 'bg-green-50 border-l-4 border-l-green-500' : ''}">
-        <div class="flex justify-between items-start mb-0.5">
-          <div class="font-medium text-sm text-gray-800 truncate flex-1">${escHtml(name)}</div>
-          <div class="text-xs text-gray-400 ml-2 flex-shrink-0">${ts}</div>
-        </div>
-        <div class="text-xs text-gray-500 truncate">${escHtml(last)}</div>
-      </div>`;
+    const last = (t.last_body || '').slice(0, 55) + ((t.last_body||'').length > 55 ? '…' : '');
+    const ts = t.last_ts ? relTime(new Date(t.last_ts)) : '';
+    return `<div onclick="selectThread('${esc(t.supplier_phone)}')"
+      class="px-4 py-4 border-b border-gray-100 cursor-pointer active:bg-gray-100
+             ${active ? 'bg-green-50 border-l-4 border-l-green-500' : 'hover:bg-gray-50'}">
+      <div class="flex justify-between items-start mb-1">
+        <div class="font-semibold text-sm text-gray-900 truncate flex-1">${esc(name)}</div>
+        <div class="text-xs text-gray-400 ml-3 flex-shrink-0">${ts}</div>
+      </div>
+      <div class="text-sm text-gray-500 truncate">${esc(last)}</div>
+    </div>`;
   }).join('');
 }
 
 // ── Chat ───────────────────────────────────────────────────────────────────
 async function selectThread(phone) {
   activePhone = phone;
-  renderThreads(); // resalta activo
+  renderThreads();
+  const thread = threads.find(t => t.supplier_phone === phone) || {};
+  const name = thread.supplier_name || phone;
+
+  // Mobile: ir al chat
+  document.body.classList.add('chat-open');
+  document.getElementById('btn-back').classList.remove('hidden');
+  document.getElementById('header-title').textContent = name;
+
+  if (thread.alibaba_url) {
+    const a = document.getElementById('header-alibaba');
+    a.href = thread.alibaba_url; a.classList.remove('hidden');
+  } else {
+    document.getElementById('header-alibaba').classList.add('hidden');
+  }
+
   document.getElementById('empty-state').classList.add('hidden');
   document.getElementById('chat-area').classList.remove('hidden');
+  document.getElementById('chat-area').classList.add('flex');
   await loadChat(phone);
 }
 
 async function loadChat(phone) {
   if (activePhone !== phone) return;
-
-  // Info del hilo
-  const thread = threads.find(t => t.supplier_phone === phone) || {};
-  document.getElementById('chat-name').textContent = thread.supplier_name || phone;
-  document.getElementById('chat-phone').textContent = phone;
-
-  if (thread.alibaba_url) {
-    const a = document.getElementById('chat-alibaba');
-    a.href = thread.alibaba_url;
-    a.classList.remove('hidden');
-  } else {
-    document.getElementById('chat-alibaba').classList.add('hidden');
-  }
-
-  // Mensajes
   try {
-    const r = await fetch(`/dashboard/thread/${encodeURIComponent(phone)}`, {
-      headers: authHeader()
-    });
+    const r = await fetch(`/dashboard/thread/${encodeURIComponent(phone)}`, { headers: authHeader() });
     const msgs = await r.json();
-
     const el = document.getElementById('messages');
-    const wasAtBottom = el.scrollHeight - el.clientHeight - el.scrollTop < 40;
+    const atBottom = el.scrollHeight - el.clientHeight - el.scrollTop < 60;
+    el.innerHTML = msgs.length
+      ? msgs.map(renderBubble).join('')
+      : '<div class="text-center text-gray-400 text-sm py-6">Sin mensajes</div>';
+    if (atBottom || msgs.length <= 5) el.scrollTop = el.scrollHeight;
 
-    el.innerHTML = msgs.length ? msgs.map(m => renderBubble(m)).join('') :
-      '<div class="text-center text-gray-400 text-sm py-4">Sin mensajes aún</div>';
-
-    if (wasAtBottom || msgs.length <= 5) el.scrollTop = el.scrollHeight;
-
-    // 24h warning
-    const lastInbound = msgs.filter(m => m.direction === 'inbound').pop();
+    const lastIn = [...msgs].reverse().find(m => m.direction === 'inbound');
     const warn = document.getElementById('window-warning');
-    if (lastInbound) {
-      const hoursAgo = (Date.now() - new Date(lastInbound.created_at)) / 3600000;
-      warn.classList.toggle('hidden', hoursAgo < 24);
-    } else {
-      warn.classList.add('hidden');
-    }
-  } catch(e) {}
+    if (lastIn) {
+      warn.classList.toggle('hidden', (Date.now() - new Date(lastIn.created_at)) < 86400000);
+    } else { warn.classList.add('hidden'); }
+  } catch {}
 }
 
 function renderBubble(m) {
-  const isOut = m.direction === 'outbound';
-  const time = new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  return `
-    <div class="flex ${isOut ? 'justify-end' : 'justify-start'}">
-      <div class="${isOut ? 'bubble-out' : 'bubble-in'} max-w-xs lg:max-w-md px-3 py-2 shadow-sm">
-        <div class="text-sm text-gray-800 whitespace-pre-wrap break-words">${escHtml(m.body)}</div>
-        <div class="text-right text-xs text-gray-400 mt-1">${time}</div>
-      </div>
-    </div>`;
+  const out = m.direction === 'outbound';
+  const time = new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+  return `<div class="flex ${out ? 'justify-end' : 'justify-start'}">
+    <div class="${out ? 'bubble-out' : 'bubble-in'} max-w-[78vw] md:max-w-md px-3 py-2 shadow-sm">
+      <div class="text-sm text-gray-800 whitespace-pre-wrap break-words leading-relaxed">${esc(m.body)}</div>
+      <div class="text-right text-xs text-gray-400 mt-1">${time}</div>
+    </div>
+  </div>`;
 }
 
 // ── Send ───────────────────────────────────────────────────────────────────
@@ -348,10 +331,7 @@ async function sendMessage() {
   const input = document.getElementById('msg-input');
   const body = input.value.trim();
   if (!body || !activePhone) return;
-
-  input.value = '';
-  input.style.height = 'auto';
-
+  input.value = ''; input.style.height = 'auto';
   try {
     const r = await fetch('/whatsapp/send_message', {
       method: 'POST',
@@ -359,50 +339,36 @@ async function sendMessage() {
       body: JSON.stringify({ to: activePhone, body })
     });
     const d = await r.json();
-    if (!d.ok) {
-      alert('Error al enviar: ' + (d.error || 'desconocido'));
-    } else {
-      await loadChat(activePhone);
-    }
-  } catch(e) {
-    alert('Error de red');
-  }
+    if (!d.ok) alert('Error: ' + (d.error || 'desconocido'));
+    else await loadChat(activePhone);
+  } catch { alert('Error de red'); }
 }
 
 function handleKey(e) {
-  if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault();
-    sendMessage();
-  }
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
 }
 
 function autoResize(el) {
   el.style.height = 'auto';
-  el.style.height = Math.min(el.scrollHeight, 128) + 'px';
+  el.style.height = Math.min(el.scrollHeight, 112) + 'px';
 }
 
 // ── Utils ──────────────────────────────────────────────────────────────────
-function escHtml(s) {
-  return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+function esc(s) {
+  return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
-
-function relativeTime(d) {
-  const diff = (Date.now() - d) / 1000;
-  if (diff < 60)   return 'ahora';
-  if (diff < 3600) return Math.floor(diff/60) + 'm';
-  if (diff < 86400) return Math.floor(diff/3600) + 'h';
-  return d.toLocaleDateString([], { day: 'numeric', month: 'short' });
+function relTime(d) {
+  const s = (Date.now() - d) / 1000;
+  if (s < 60) return 'ahora';
+  if (s < 3600) return Math.floor(s/60) + 'm';
+  if (s < 86400) return Math.floor(s/3600) + 'h';
+  return d.toLocaleDateString([], {day:'numeric', month:'short'});
 }
 
 // ── Boot ───────────────────────────────────────────────────────────────────
 init();
-document.getElementById('key-input')?.addEventListener('keydown', e => {
-  if (e.key === 'Enter') doStep1();
-});
-document.getElementById('totp-input')?.addEventListener('keydown', e => {
-  if (e.key === 'Enter') doStep2();
-});
-// Auto-submit TOTP cuando se escriben 6 dígitos
+document.getElementById('key-input')?.addEventListener('keydown', e => { if (e.key==='Enter') doStep1(); });
+document.getElementById('totp-input')?.addEventListener('keydown', e => { if (e.key==='Enter') doStep2(); });
 document.getElementById('totp-input')?.addEventListener('input', e => {
   if (e.target.value.replace(/\D/g,'').length === 6) doStep2();
 });
