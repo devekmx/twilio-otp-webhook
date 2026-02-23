@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Devek Sourcing — Conversaciones</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+    .bubble-in  { background: #f0f0f0; border-radius: 0 12px 12px 12px; }
+    .bubble-out { background: #dcf8c6; border-radius: 12px 0 12px 12px; }
+    #messages   { scroll-behavior: smooth; }
+  </style>
+</head>
+<body class="bg-gray-100 h-screen flex flex-col">
+
+<!-- ── AUTH SCREEN ─────────────────────────────────────────────────────── -->
+<div id="auth-screen" class="hidden fixed inset-0 bg-gray-900 bg-opacity-80 flex items-center justify-center z-50">
+  <div class="bg-white rounded-2xl shadow-xl p-8 w-80 flex flex-col gap-4">
+    <h2 class="text-xl font-bold text-gray-800">🔑 Acceso</h2>
+    <p class="text-sm text-gray-500">Ingresa tu OpenClaw Shared Secret</p>
+    <input id="key-input" type="password" placeholder="oc_7f3b9c..."
+      class="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400" />
+    <button onclick="doAuth()"
+      class="bg-green-500 hover:bg-green-600 text-white rounded-lg px-4 py-2 text-sm font-medium">
+      Entrar
+    </button>
+    <p id="auth-error" class="text-red-500 text-xs hidden">Clave incorrecta</p>
+  </div>
+</div>
+
+<!-- ── MAIN APP ────────────────────────────────────────────────────────── -->
+<div id="app" class="hidden h-screen flex flex-col">
+
+  <!-- Header -->
+  <div class="bg-green-600 text-white px-4 py-3 flex items-center justify-between shadow">
+    <div class="flex items-center gap-3">
+      <span class="text-2xl">💬</span>
+      <div>
+        <div class="font-bold text-sm">Devek Sourcing</div>
+        <div id="status-bar" class="text-xs opacity-75">Cargando...</div>
+      </div>
+    </div>
+    <button onclick="logout()" class="text-xs opacity-70 hover:opacity-100">Salir</button>
+  </div>
+
+  <!-- Body -->
+  <div class="flex flex-1 overflow-hidden">
+
+    <!-- ── Thread list ── -->
+    <div class="w-80 bg-white border-r border-gray-200 flex flex-col flex-shrink-0">
+      <div class="px-3 py-2 border-b border-gray-100">
+        <input id="search" type="text" placeholder="🔍 Buscar proveedor..."
+          oninput="filterThreads()"
+          class="w-full text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-green-400" />
+      </div>
+      <div id="thread-list" class="overflow-y-auto flex-1">
+        <div class="text-center text-gray-400 text-sm py-8">Cargando conversaciones...</div>
+      </div>
+    </div>
+
+    <!-- ── Chat area ── -->
+    <div class="flex-1 flex flex-col bg-gray-50">
+
+      <!-- Empty state -->
+      <div id="empty-state" class="flex-1 flex items-center justify-center text-gray-400">
+        <div class="text-center">
+          <div class="text-5xl mb-3">💬</div>
+          <div class="text-sm">Selecciona una conversación</div>
+        </div>
+      </div>
+
+      <!-- Active chat -->
+      <div id="chat-area" class="hidden flex-1 flex flex-col overflow-hidden">
+
+        <!-- Chat header -->
+        <div class="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
+          <div>
+            <div id="chat-name" class="font-semibold text-gray-800 text-sm"></div>
+            <div id="chat-phone" class="text-xs text-gray-400"></div>
+          </div>
+          <a id="chat-alibaba" href="#" target="_blank"
+            class="hidden text-xs text-blue-500 hover:underline">Ver en Alibaba →</a>
+        </div>
+
+        <!-- Messages -->
+        <div id="messages" class="flex-1 overflow-y-auto px-4 py-3 flex flex-col gap-2">
+        </div>
+
+        <!-- Input -->
+        <div class="bg-white border-t border-gray-200 px-3 py-3 flex gap-2 items-end">
+          <textarea id="msg-input" rows="1"
+            placeholder="Escribe un mensaje... (Enter para enviar)"
+            onkeydown="handleKey(event)"
+            oninput="autoResize(this)"
+            class="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-green-400 max-h-32"></textarea>
+          <button onclick="sendMessage()"
+            class="bg-green-500 hover:bg-green-600 text-white rounded-xl px-4 py-2 text-sm font-medium flex-shrink-0">
+            ➤
+          </button>
+        </div>
+
+        <!-- 24h warning -->
+        <div id="window-warning" class="hidden bg-amber-50 border-t border-amber-200 px-4 py-2 text-xs text-amber-700">
+          ⚠️ Última respuesta hace más de 24h — solo puedes usar templates. El mensaje libre puede fallar.
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────
+let KEY = '';
+let threads = [];
+let activePhone = null;
+let pollInterval = null;
+
+// ── Auth ───────────────────────────────────────────────────────────────────
+function init() {
+  // Leer key de URL (?key=...) o localStorage
+  const params = new URLSearchParams(location.search);
+  KEY = params.get('key') || localStorage.getItem('oc_key') || '';
+  if (KEY) {
+    showApp();
+  } else {
+    document.getElementById('auth-screen').classList.remove('hidden');
+  }
+}
+
+async function doAuth() {
+  const input = document.getElementById('key-input').value.trim();
+  if (!input) return;
+  // Probar la key contra /dashboard/threads
+  const r = await fetch('/dashboard/threads', { headers: { 'x-openclaw-key': input } });
+  if (r.ok) {
+    KEY = input;
+    localStorage.setItem('oc_key', KEY);
+    document.getElementById('auth-screen').classList.add('hidden');
+    showApp();
+  } else {
+    document.getElementById('auth-error').classList.remove('hidden');
+  }
+}
+
+function logout() {
+  localStorage.removeItem('oc_key');
+  location.reload();
+}
+
+function showApp() {
+  document.getElementById('app').classList.remove('hidden');
+  loadThreads();
+  pollInterval = setInterval(loadThreads, 6000);
+}
+
+// ── Threads ────────────────────────────────────────────────────────────────
+async function loadThreads() {
+  try {
+    const r = await fetch('/dashboard/threads', { headers: { 'x-openclaw-key': KEY } });
+    if (!r.ok) { if (r.status === 401) { logout(); return; } }
+    threads = await r.json();
+    renderThreads();
+    document.getElementById('status-bar').textContent =
+      `${threads.length} conversación${threads.length !== 1 ? 'es' : ''} · actualizado ${new Date().toLocaleTimeString()}`;
+    if (activePhone) loadChat(activePhone);
+  } catch(e) {
+    document.getElementById('status-bar').textContent = 'Error de conexión';
+  }
+}
+
+function filterThreads() {
+  renderThreads();
+}
+
+function renderThreads() {
+  const q = (document.getElementById('search').value || '').toLowerCase();
+  const filtered = threads.filter(t =>
+    !q ||
+    (t.supplier_name || '').toLowerCase().includes(q) ||
+    (t.supplier_phone || '').includes(q)
+  );
+
+  const el = document.getElementById('thread-list');
+  if (!filtered.length) {
+    el.innerHTML = '<div class="text-center text-gray-400 text-sm py-8">Sin resultados</div>';
+    return;
+  }
+
+  el.innerHTML = filtered.map(t => {
+    const isActive = t.supplier_phone === activePhone;
+    const name = t.supplier_name || t.supplier_phone;
+    const last = (t.last_body || '').substring(0, 60);
+    const ts = t.last_ts ? relativeTime(new Date(t.last_ts)) : '';
+    return `
+      <div onclick="selectThread('${t.supplier_phone}')"
+        class="px-3 py-3 border-b border-gray-100 cursor-pointer hover:bg-gray-50 transition-colors
+               ${isActive ? 'bg-green-50 border-l-4 border-l-green-500' : ''}">
+        <div class="flex justify-between items-start mb-0.5">
+          <div class="font-medium text-sm text-gray-800 truncate flex-1">${escHtml(name)}</div>
+          <div class="text-xs text-gray-400 ml-2 flex-shrink-0">${ts}</div>
+        </div>
+        <div class="text-xs text-gray-500 truncate">${escHtml(last)}</div>
+      </div>`;
+  }).join('');
+}
+
+// ── Chat ───────────────────────────────────────────────────────────────────
+async function selectThread(phone) {
+  activePhone = phone;
+  renderThreads(); // resalta activo
+  document.getElementById('empty-state').classList.add('hidden');
+  document.getElementById('chat-area').classList.remove('hidden');
+  await loadChat(phone);
+}
+
+async function loadChat(phone) {
+  if (activePhone !== phone) return;
+
+  // Info del hilo
+  const thread = threads.find(t => t.supplier_phone === phone) || {};
+  document.getElementById('chat-name').textContent = thread.supplier_name || phone;
+  document.getElementById('chat-phone').textContent = phone;
+
+  if (thread.alibaba_url) {
+    const a = document.getElementById('chat-alibaba');
+    a.href = thread.alibaba_url;
+    a.classList.remove('hidden');
+  } else {
+    document.getElementById('chat-alibaba').classList.add('hidden');
+  }
+
+  // Mensajes
+  try {
+    const r = await fetch(`/dashboard/thread/${encodeURIComponent(phone)}`, {
+      headers: { 'x-openclaw-key': KEY }
+    });
+    const msgs = await r.json();
+
+    const el = document.getElementById('messages');
+    const wasAtBottom = el.scrollHeight - el.clientHeight - el.scrollTop < 40;
+
+    el.innerHTML = msgs.length ? msgs.map(m => renderBubble(m)).join('') :
+      '<div class="text-center text-gray-400 text-sm py-4">Sin mensajes aún</div>';
+
+    if (wasAtBottom || msgs.length <= 5) el.scrollTop = el.scrollHeight;
+
+    // 24h warning
+    const lastInbound = msgs.filter(m => m.direction === 'inbound').pop();
+    const warn = document.getElementById('window-warning');
+    if (lastInbound) {
+      const hoursAgo = (Date.now() - new Date(lastInbound.created_at)) / 3600000;
+      warn.classList.toggle('hidden', hoursAgo < 24);
+    } else {
+      warn.classList.add('hidden');
+    }
+  } catch(e) {}
+}
+
+function renderBubble(m) {
+  const isOut = m.direction === 'outbound';
+  const time = new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return `
+    <div class="flex ${isOut ? 'justify-end' : 'justify-start'}">
+      <div class="${isOut ? 'bubble-out' : 'bubble-in'} max-w-xs lg:max-w-md px-3 py-2 shadow-sm">
+        <div class="text-sm text-gray-800 whitespace-pre-wrap break-words">${escHtml(m.body)}</div>
+        <div class="text-right text-xs text-gray-400 mt-1">${time}</div>
+      </div>
+    </div>`;
+}
+
+// ── Send ───────────────────────────────────────────────────────────────────
+async function sendMessage() {
+  const input = document.getElementById('msg-input');
+  const body = input.value.trim();
+  if (!body || !activePhone) return;
+
+  input.value = '';
+  input.style.height = 'auto';
+
+  try {
+    const r = await fetch('/whatsapp/send_message', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-openclaw-key': KEY },
+      body: JSON.stringify({ to: activePhone, body })
+    });
+    const d = await r.json();
+    if (!d.ok) {
+      alert('Error al enviar: ' + (d.error || 'desconocido'));
+    } else {
+      await loadChat(activePhone);
+    }
+  } catch(e) {
+    alert('Error de red');
+  }
+}
+
+function handleKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
+  }
+}
+
+function autoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 128) + 'px';
+}
+
+// ── Utils ──────────────────────────────────────────────────────────────────
+function escHtml(s) {
+  return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function relativeTime(d) {
+  const diff = (Date.now() - d) / 1000;
+  if (diff < 60)   return 'ahora';
+  if (diff < 3600) return Math.floor(diff/60) + 'm';
+  if (diff < 86400) return Math.floor(diff/3600) + 'h';
+  return d.toLocaleDateString([], { day: 'numeric', month: 'short' });
+}
+
+// ── Boot ───────────────────────────────────────────────────────────────────
+init();
+document.getElementById('key-input')?.addEventListener('keydown', e => {
+  if (e.key === 'Enter') doAuth();
+});
+</script>
+</body>
+</html>
