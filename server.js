@@ -180,7 +180,7 @@ app.post("/twilio/inbound", async (req, res) => {
   try {
     const { From, To, Body } = req.body;
     const isWhatsApp = (From || "").startsWith("whatsapp:");
-    const supplierPhone = isWhatsApp ? From.replace("whatsapp:", "") : From;
+    const supplierPhone = normalizePhone(isWhatsApp ? From.replace("whatsapp:", "") : From);
 
     await saveMessage({
       supplierPhone,
@@ -193,11 +193,38 @@ app.post("/twilio/inbound", async (req, res) => {
     });
 
     console.log("💬 INBOUND", { From, To, Body });
+
+    // Notificar a OpenClaw/Telegram
+    notifyTelegram(supplierPhone, Body || "").catch(e => console.error("notify error", e));
+
   } catch (e) {
     console.error("inbound error", e);
   }
   res.type("text/xml").send("<Response></Response>");
 });
+
+async function notifyTelegram(phone, body) {
+  const token  = process.env.NOTIFY_TELEGRAM_TOKEN;
+  const chatId = process.env.NOTIFY_TELEGRAM_CHAT_ID;
+  if (!token || !chatId) return;
+
+  // Buscar nombre del proveedor
+  const r = await db.query("SELECT name FROM suppliers WHERE phone_e164=$1", [phone]);
+  const name = r.rows[0]?.name || phone;
+
+  const preview = body.length > 200 ? body.slice(0, 200) + "…" : body;
+  const text = `💬 *Nuevo mensaje de proveedor*\n\n*${name}*\n${phone}\n\n${preview}`;
+
+  await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chat_id: chatId,
+      text,
+      parse_mode: "Markdown",
+    }),
+  });
+}
 
 // ─── Sourcing API ─────────────────────────────────────────────────────────────
 
