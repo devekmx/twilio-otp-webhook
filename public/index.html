@@ -120,9 +120,8 @@ let pollInterval = null;
 
 // ── Auth ───────────────────────────────────────────────────────────────────
 function init() {
-  // Leer key de URL (?key=...) o localStorage
-  const params = new URLSearchParams(location.search);
-  KEY = params.get('key') || localStorage.getItem('oc_key') || '';
+  // Solo localStorage — nunca leer la clave de la URL
+  KEY = localStorage.getItem('oc_key') || '';
   if (KEY) {
     showApp();
   } else {

@@ -48,18 +48,22 @@ async function saveMessage({ supplierPhone, direction, channel, fromAddr, toAddr
 }
 
 function requireOpenclaw(req, res, next) {
-  // Acepta header x-openclaw-key O query param ?key=...
-  const key = req.header("x-openclaw-key") || req.query.key;
+  // Solo acepta header — nunca exponer la clave en URL/logs
+  const key = req.header("x-openclaw-key");
   if (!key || key !== process.env.OPENCLAW_SHARED_SECRET) {
+    // Para la UI web devuelve 401 HTML (no JSON)
+    if (req.path.startsWith("/ui") || req.accepts("html")) {
+      return res.status(401).send("Unauthorized");
+    }
     return res.status(401).json({ ok: false, error: "unauthorized" });
   }
   next();
 }
 
-// ─── Static UI ───────────────────────────────────────────────────────────────
+// ─── Static UI (la protección real está en las APIs /dashboard/* ) ───────────
 
-app.use("/ui", requireOpenclaw, express.static(join(__dirname, "public")));
-app.get("/ui", requireOpenclaw, (_req, res) => res.sendFile(join(__dirname, "public", "index.html")));
+app.use("/ui", express.static(join(__dirname, "public")));
+app.get("/ui", (_req, res) => res.sendFile(join(__dirname, "public", "index.html")));
 
 // ─── Healthcheck ─────────────────────────────────────────────────────────────
 
