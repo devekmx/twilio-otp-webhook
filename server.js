@@ -19,11 +19,31 @@ const db = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+// Normaliza teléfono a E.164 sin prefijo whatsapp: ni espacios
+// México: Twilio usa +521XXXXXXXXXX (10 dígitos tras el 1)
+//         si llega +52XXXXXXXXXX sin el 1 intermedio, lo añade
+function normalizePhone(raw) {
+  if (!raw) return raw;
+  let p = raw
+    .replace(/^whatsapp:/i, "")  // quitar prefijo whatsapp:
+    .replace(/\s+/g, "")         // quitar espacios
+    .trim();
+
+  // México: +52 seguido de dígito que NO es 1, y longitud 13 (ej. +525551048233)
+  // → convertir a +521XXXXXXXXXX
+  if (/^\+52[2-9]\d{9}$/.test(p)) {
+    p = "+521" + p.slice(3);
+  }
+
+  return p;
+}
+
 async function saveMessage({ supplierPhone, direction, channel, fromAddr, toAddr, body, raw }) {
+  const phone = normalizePhone(supplierPhone);
   await db.query(
     `INSERT INTO messages (supplier_phone, direction, channel, from_addr, to_addr, body, raw)
      VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-    [supplierPhone, direction, channel, fromAddr, toAddr, body, raw]
+    [phone, direction, channel, fromAddr, toAddr, body, raw]
   );
 }
 
@@ -98,7 +118,7 @@ app.post("/sourcing/draft_list", requireOpenclaw, async (req, res) => {
   const batchId = r.rows[0].id;
 
   for (const s of suppliers || []) {
-    const phone = (s.phone || "").replace(/\s+/g, "");
+    const phone = normalizePhone(s.phone || "");
     if (!phone) continue;
 
     await db.query(
@@ -177,7 +197,8 @@ app.post("/whatsapp/send_rfq_batch", requireOpenclaw, async (req, res) => {
 
 // Enviar mensaje libre (dentro de ventana 24h activa)
 app.post("/whatsapp/send_message", requireOpenclaw, async (req, res) => {
-  const { to, body } = req.body; // to = "+8613..." (sin prefijo whatsapp:)
+  const { to: toRaw, body } = req.body;
+  const to = normalizePhone(toRaw);
   if (!to || !body) return res.status(400).json({ ok: false, error: "to y body requeridos" });
 
   const from = process.env.TWILIO_WHATSAPP_FROM;
