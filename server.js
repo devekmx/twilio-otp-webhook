@@ -346,6 +346,33 @@ app.post("/whatsapp/send_message", requireOpenclaw, async (req, res) => {
 
 // ─── Dashboard API ────────────────────────────────────────────────────────────
 
+// Mensajes inbound que el agente aún no procesó
+app.get("/dashboard/pending", requireOpenclaw, async (req, res) => {
+  const r = await db.query(`
+    SELECT m.id, m.supplier_phone, m.body, m.created_at,
+           s.name AS supplier_name, s.alibaba_url
+    FROM messages m
+    LEFT JOIN suppliers s ON s.phone_e164 = m.supplier_phone
+    WHERE m.direction = 'inbound'
+      AND m.channel   = 'whatsapp'
+      AND m.agent_processed = false
+    ORDER BY m.created_at ASC
+    LIMIT 20
+  `);
+  res.json(r.rows);
+});
+
+// Marcar mensaje(s) como procesados por el agente
+app.post("/dashboard/mark_processed", requireOpenclaw, async (req, res) => {
+  const { ids } = req.body; // array de ids
+  if (!ids?.length) return res.json({ ok: true });
+  await db.query(
+    `UPDATE messages SET agent_processed=true WHERE id = ANY($1::int[])`,
+    [ids]
+  );
+  res.json({ ok: true });
+});
+
 app.get("/dashboard/threads", requireOpenclaw, async (req, res) => {
   const r = await db.query(`
     SELECT
