@@ -3,6 +3,9 @@ import twilio from "twilio";
 import pg from "pg";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
+import { authenticator } from "otplib";
+import jwt from "jsonwebtoken";
+import QRCode from "qrcode";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -48,22 +51,77 @@ async function saveMessage({ supplierPhone, direction, channel, fromAddr, toAddr
 }
 
 function requireOpenclaw(req, res, next) {
-  // Solo acepta header — nunca exponer la clave en URL/logs
   const key = req.header("x-openclaw-key");
-  if (!key || key !== process.env.OPENCLAW_SHARED_SECRET) {
-    // Para la UI web devuelve 401 HTML (no JSON)
-    if (req.path.startsWith("/ui") || req.accepts("html")) {
-      return res.status(401).send("Unauthorized");
-    }
-    return res.status(401).json({ ok: false, error: "unauthorized" });
+  const sessionToken = req.header("x-session-token");
+
+  // Opción A: JWT de sesión (lo que usa la UI tras login 2FA)
+  if (sessionToken) {
+    try {
+      jwt.verify(sessionToken, process.env.OPENCLAW_SHARED_SECRET);
+      return next();
+    } catch { /* inválido o expirado */ }
   }
-  next();
+
+  // Opción B: clave raw (para llamadas de OpenClaw/agentes via API)
+  if (key && key === process.env.OPENCLAW_SHARED_SECRET) return next();
+
+  return res.status(401).json({ ok: false, error: "unauthorized" });
 }
 
 // ─── Static UI (la protección real está en las APIs /dashboard/* ) ───────────
 
 app.use("/ui", express.static(join(__dirname, "public")));
 app.get("/ui", (_req, res) => res.sendFile(join(__dirname, "public", "index.html")));
+
+// ─── Auth 2FA ────────────────────────────────────────────────────────────────
+
+// Paso 1: verifica clave → devuelve step:totp
+// Paso 2: verifica clave + código TOTP → devuelve JWT de sesión (12h)
+app.post("/ui/auth", async (req, res) => {
+  const { key, code } = req.body;
+
+  if (!key || key !== process.env.OPENCLAW_SHARED_SECRET) {
+    return res.status(401).json({ ok: false, error: "Clave incorrecta" });
+  }
+
+  if (!code) {
+    // Clave correcta, pedir TOTP
+    return res.json({ ok: true, step: "totp" });
+  }
+
+  // Verificar código TOTP (ventana ±1 para compensar desfase de reloj)
+  authenticator.options = { window: 1 };
+  const valid = authenticator.verify({ token: code, secret: process.env.TOTP_SECRET });
+  if (!valid) {
+    return res.status(401).json({ ok: false, step: "totp", error: "Código incorrecto" });
+  }
+
+  const token = jwt.sign({ auth: true }, process.env.OPENCLAW_SHARED_SECRET, { expiresIn: "12h" });
+  res.json({ ok: true, token });
+});
+
+// QR de configuración — solo accesible con la clave raw en header (una vez)
+app.get("/ui/setup", async (req, res) => {
+  const key = req.header("x-openclaw-key");
+  if (!key || key !== process.env.OPENCLAW_SHARED_SECRET) {
+    return res.status(401).send("Envía x-openclaw-key en el header");
+  }
+  const otpauth = authenticator.keyuri("Warren", "Devek Sourcing", process.env.TOTP_SECRET);
+  const qr = await QRCode.toDataURL(otpauth);
+  res.send(`<!DOCTYPE html><html><head><meta charset="utf-8">
+    <title>Setup 2FA</title>
+    <style>body{font-family:sans-serif;max-width:400px;margin:3rem auto;text-align:center}
+    code{background:#f0f0f0;padding:4px 8px;border-radius:4px;font-size:12px;word-break:break-all}
+    img{border:1px solid #ddd;border-radius:8px;padding:8px}</style></head>
+    <body>
+      <h2>🔐 Configurar 2FA</h2>
+      <p>Escanea con <strong>Google Authenticator</strong>:</p>
+      <img src="${qr}" alt="QR Code" width="220"/><br/>
+      <p style="font-size:12px;color:#666">O añade manualmente:</p>
+      <code>${process.env.TOTP_SECRET}</code>
+      <p style="margin-top:2rem"><a href="/ui">← Ir al dashboard</a></p>
+    </body></html>`);
+});
 
 // ─── Healthcheck ─────────────────────────────────────────────────────────────
 

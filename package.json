@@ -9,7 +9,10 @@
   },
   "dependencies": {
     "express": "^4.19.2",
-    "twilio": "^5.0.0",
-    "pg": "^8.11.5"
+    "jsonwebtoken": "^9.0.3",
+    "otplib": "^13.3.0",
+    "pg": "^8.11.5",
+    "qrcode": "^1.5.4",
+    "twilio": "^5.0.0"
   }
 }
